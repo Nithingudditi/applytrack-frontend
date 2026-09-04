@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import api from '../api/axios'
-import { useAuth } from '../context/AuthContext'
+import { statusClass } from '../utils/status'
 
 function DashboardPage() {
-  const { logout } = useAuth()
   const [stats, setStats] = useState(null)
   const [error, setError] = useState('')
 
@@ -15,21 +14,18 @@ function DashboardPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <h1>Dashboard</h1>
-        <button onClick={logout}>Log Out</button>
-      </div>
-
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-
+      <h1>Dashboard</h1>
+      {error && <p className="form-error">{error}</p>}
       {stats && (
         <div>
-          <p>Total applications: {stats.total_applications}</p>
-          <ul>
+          <div className="stat-total">{stats.total_applications}</div>
+          <div className="stat-breakdown">
             {stats.status_breakdown.map((s) => (
-              <li key={s.status}>{s.status}: {s.count}</li>
+              <span key={s.status} className={statusClass(s.status)}>
+                {s.status} · {s.count}
+              </span>
             ))}
-          </ul>
+          </div>
         </div>
       )}
     </div>
