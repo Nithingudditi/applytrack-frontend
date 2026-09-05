@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import { STATUS_OPTIONS, statusClass } from '../utils/status'
 
+const OUTCOME_OPTIONS = ['pending', 'passed', 'failed']
+
 function ApplicationDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -11,7 +13,16 @@ function ApplicationDetailPage() {
   const [contacts, setContacts] = useState([])
   const [interviews, setInterviews] = useState([])
   const [statusHistory, setStatusHistory] = useState([])
+  const [resumes, setResumes] = useState([])
   const [error, setError] = useState('')
+
+  const [editing, setEditing] = useState(false)
+  const [editCompany, setEditCompany] = useState('')
+  const [editRole, setEditRole] = useState('')
+  const [editSource, setEditSource] = useState('')
+  const [editJobUrl, setEditJobUrl] = useState('')
+  const [editSalaryRange, setEditSalaryRange] = useState('')
+  const [editResumeId, setEditResumeId] = useState('')
 
   const [contactName, setContactName] = useState('')
   const [contactEmail, setContactEmail] = useState('')
@@ -20,22 +31,52 @@ function ApplicationDetailPage() {
 
   const fetchAll = async () => {
     try {
-      const [appRes, contactsRes, interviewsRes, historyRes] = await Promise.all([
+      const [appRes, contactsRes, interviewsRes, historyRes, resumesRes] = await Promise.all([
         api.get(`/applications/${id}/`),
         api.get(`/applications/${id}/contacts/`),
         api.get(`/applications/${id}/interviews/`),
         api.get(`/applications/${id}/status-history/`),
+        api.get('/resumes/'),
       ])
       setApplication(appRes.data)
       setContacts(contactsRes.data)
       setInterviews(interviewsRes.data)
       setStatusHistory(historyRes.data)
+      setResumes(resumesRes.data)
     } catch (err) {
       setError('Failed to load application details')
     }
   }
 
   useEffect(() => { fetchAll() }, [id])
+
+  const startEditing = () => {
+    setEditCompany(application.company)
+    setEditRole(application.role)
+    setEditSource(application.source || '')
+    setEditJobUrl(application.job_url || '')
+    setEditSalaryRange(application.salary_range || '')
+    setEditResumeId(application.resume || '')
+    setEditing(true)
+  }
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault()
+    try {
+      await api.patch(`/applications/${id}/`, {
+        company: editCompany,
+        role: editRole,
+        source: editSource,
+        job_url: editJobUrl,
+        salary_range: editSalaryRange,
+        resume: editResumeId || null,
+      })
+      setEditing(false)
+      fetchAll()
+    } catch (err) {
+      setError('Failed to save changes')
+    }
+  }
 
   const handleStatusChange = async (newStatus) => {
     try {
@@ -68,6 +109,16 @@ function ApplicationDetailPage() {
     }
   }
 
+  const handleDeleteContact = async (contactId) => {
+    if (!window.confirm('Delete this contact?')) return
+    try {
+      await api.delete(`/applications/${id}/contacts/${contactId}/`)
+      fetchAll()
+    } catch (err) {
+      setError('Failed to delete contact')
+    }
+  }
+
   const handleAddInterview = async (e) => {
     e.preventDefault()
     try {
@@ -80,14 +131,91 @@ function ApplicationDetailPage() {
     }
   }
 
+  const handleOutcomeChange = async (interviewId, newOutcome) => {
+    try {
+      await api.patch(`/applications/${id}/interviews/${interviewId}/`, { outcome: newOutcome })
+      fetchAll()
+    } catch (err) {
+      setError('Failed to update outcome')
+    }
+  }
+
+  const handleDeleteInterview = async (interviewId) => {
+    if (!window.confirm('Delete this interview?')) return
+    try {
+      await api.delete(`/applications/${id}/interviews/${interviewId}/`)
+      fetchAll()
+    } catch (err) {
+      setError('Failed to delete interview')
+    }
+  }
+
   if (!application) return <p>Loading…</p>
 
   return (
     <div>
-      <h1>{application.role} — {application.company}</h1>
+      {!editing ? (
+        <>
+          <h1>{application.role} — {application.company}</h1>
+          <p style={{ color: 'var(--ink-soft)', fontSize: '0.9rem' }}>
+            {application.source && <>Source: {application.source} · </>}
+            {application.salary_range && <>Salary: {application.salary_range} · </>}
+            {application.job_url && <><a href={application.job_url} target="_blank" rel="noreferrer">Job posting</a> · </>}
+            {application.resume_detail
+              ? <>Resume: <a href={application.resume_detail.file} target="_blank" rel="noreferrer">{application.resume_detail.label || 'view'}</a></>
+              : <>Resume: none linked</>}
+          </p>
+          <button onClick={startEditing} className="btn btn-outline">Edit details</button>
+        </>
+      ) : (
+        <form onSubmit={handleSaveEdit}>
+          <h2>Edit application</h2>
+          <div className="field-row">
+            <div className="field">
+              <label>Company</label>
+              <input value={editCompany} onChange={(e) => setEditCompany(e.target.value)} required />
+            </div>
+            <div className="field">
+              <label>Role</label>
+              <input value={editRole} onChange={(e) => setEditRole(e.target.value)} required />
+            </div>
+            <div className="field">
+              <label>Source</label>
+              <select value={editSource} onChange={(e) => setEditSource(e.target.value)}>
+                <option value="">—</option>
+                <option value="linkedin">LinkedIn</option>
+                <option value="referral">Referral</option>
+                <option value="company_site">Company site</option>
+                <option value="job_board">Job board</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Job URL</label>
+              <input value={editJobUrl} onChange={(e) => setEditJobUrl(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Salary range</label>
+              <input value={editSalaryRange} onChange={(e) => setEditSalaryRange(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Resume used</label>
+              <select value={editResumeId} onChange={(e) => setEditResumeId(e.target.value)}>
+                <option value="">—</option>
+                {resumes.map((r) => (
+                  <option key={r.id} value={r.id}>{r.label || `Resume #${r.id}`}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <button type="submit" className="btn btn-primary">Save</button>{' '}
+          <button type="button" className="btn btn-outline" onClick={() => setEditing(false)}>Cancel</button>
+        </form>
+      )}
+
       {error && <p className="form-error">{error}</p>}
 
-      <div className="field-row">
+      <div className="field-row" style={{ marginTop: '1.5rem' }}>
         <div className="field">
           <label>Status</label>
           <select value={application.status} onChange={(e) => handleStatusChange(e.target.value)}>
@@ -100,7 +228,12 @@ function ApplicationDetailPage() {
 
       <h2>Contacts</h2>
       <ul className="list-plain">
-        {contacts.map((c) => <li key={c.id}>{c.name} — {c.email}</li>)}
+        {contacts.map((c) => (
+          <li key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{c.name} — {c.email}</span>
+            <button onClick={() => handleDeleteContact(c.id)} className="btn btn-danger" style={{ padding: '0.2rem 0.6rem', fontSize: '0.78rem' }}>Remove</button>
+          </li>
+        ))}
       </ul>
       <form onSubmit={handleAddContact} className="field-row">
         <div className="field"><label>Name</label><input value={contactName} onChange={(e) => setContactName(e.target.value)} required /></div>
@@ -110,7 +243,17 @@ function ApplicationDetailPage() {
 
       <h2>Interviews</h2>
       <ul className="list-plain">
-        {interviews.map((i) => <li key={i.id}>{i.round_type} — {i.scheduled_date} — {i.outcome}</li>)}
+        {interviews.map((i) => (
+          <li key={i.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{i.round_type} — {i.scheduled_date}</span>
+            <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <select value={i.outcome} onChange={(e) => handleOutcomeChange(i.id, e.target.value)}>
+                {OUTCOME_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+              <button onClick={() => handleDeleteInterview(i.id)} className="btn btn-danger" style={{ padding: '0.2rem 0.6rem', fontSize: '0.78rem' }}>Remove</button>
+            </span>
+          </li>
+        ))}
       </ul>
       <form onSubmit={handleAddInterview} className="field-row">
         <div className="field"><label>Round type</label><input value={roundType} onChange={(e) => setRoundType(e.target.value)} required /></div>
